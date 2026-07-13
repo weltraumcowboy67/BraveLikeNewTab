@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Benni New Tab",
+  "version": "1.0.2",
+  "description": "Eine schnelle, lokale und minimalistische Neuer-Tab-Startseite fuer Firefox.",
+  "permissions": [
+    "storage"
+  ],
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "icons": {
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; img-src 'self' data: blob:; connect-src 'self' https:;"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "benni-newtab-startpage@local",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  }
+}
