@@ -13,13 +13,16 @@ import {
 } from "./storage.js";
 import {
   BUILTIN_BACKGROUNDS,
+  createOnlineBackground,
   getAllBackgrounds,
   getEnabledBackgrounds,
   importImageFile,
   importImageUrl,
+  normalizeImageApiTemplate,
   selectBackground,
   setElementBackground
 } from "./backgrounds.js";
+import { getLocale, resolveLocale, setLocale, t, translatePage } from "./i18n.js";
 
 const DEFAULT_TILES = [
   { id: "default-youtube", title: "YouTube", url: "https://www.youtube.com/", icon: "icons/shortcuts/youtube.svg" }
@@ -44,11 +47,16 @@ const elements = {
   themeSelect: document.querySelector("#themeSelect"),
   focusModeToggle: document.querySelector("#focusModeToggle"),
   defaultTilesToggle: document.querySelector("#defaultTilesToggle"),
+  defaultSearchSelect: document.querySelector("#defaultSearchSelect"),
   searchProviderForm: document.querySelector("#searchProviderForm"),
   providerLabelInput: document.querySelector("#providerLabelInput"),
   providerUrlInput: document.querySelector("#providerUrlInput"),
   searchProviderList: document.querySelector("#searchProviderList"),
   backgroundModeSelect: document.querySelector("#backgroundModeSelect"),
+  backgroundSourceSelect: document.querySelector("#backgroundSourceSelect"),
+  customApiSettings: document.querySelector("#customApiSettings"),
+  customImageApiInput: document.querySelector("#customImageApiInput"),
+  refreshBackgroundButton: document.querySelector("#refreshBackgroundButton"),
   imageFileInput: document.querySelector("#imageFileInput"),
   imageUrlForm: document.querySelector("#imageUrlForm"),
   imageUrlInput: document.querySelector("#imageUrlInput"),
@@ -59,6 +67,11 @@ const elements = {
   shortcutIconInput: document.querySelector("#shortcutIconInput"),
   shortcutList: document.querySelector("#shortcutList"),
   defaultTileIconList: document.querySelector("#defaultTileIconList"),
+  showClockToggle: document.querySelector("#showClockToggle"),
+  clockFormatSelect: document.querySelector("#clockFormatSelect"),
+  languageSelect: document.querySelector("#languageSelect"),
+  settingsNavItems: [...document.querySelectorAll("[data-settings-tab]")],
+  settingsPages: [...document.querySelectorAll("[data-settings-page]")],
   resetButton: document.querySelector("#resetButton"),
   toast: document.querySelector("#toast")
 };
@@ -71,14 +84,18 @@ let appState = {
 };
 
 let toastTimer = null;
+let onlineBackgroundSeed = "";
+let lastFocusedElement = null;
 
 init().catch((error) => {
   console.error(error);
-  showToast("Die Startseite konnte nicht vollstaendig geladen werden.");
+  showToast(t("toast.loadError"));
 });
 
 async function init() {
   appState = { ...appState, ...(await loadState()) };
+  setLocale(resolveLocale(appState.settings.language));
+  translatePage();
   applySettingsToPage();
   bindEvents();
   updateClock();
@@ -91,6 +108,9 @@ function bindEvents() {
   elements.settingsButton.addEventListener("click", openSettings);
   elements.closeSettingsButton.addEventListener("click", closeSettings);
   elements.panelBackdrop.addEventListener("click", closeSettings);
+  elements.settingsNavItems.forEach((button) => {
+    button.addEventListener("click", () => activateSettingsPage(button.dataset.settingsTab));
+  });
 
   elements.searchForm.addEventListener("submit", handleSearchSubmit);
   elements.searchInput.addEventListener("focus", () => elements.body.classList.add("search-active"));
@@ -135,6 +155,12 @@ function bindEvents() {
     render();
   });
 
+  elements.defaultSearchSelect.addEventListener("change", async () => {
+    appState.settings.searchProviderId = elements.defaultSearchSelect.value;
+    await persistSettings();
+    renderSearchProviders();
+  });
+
   elements.searchProviderForm.addEventListener("submit", handleSearchProviderSubmit);
 
   elements.backgroundModeSelect.addEventListener("change", async () => {
@@ -148,12 +174,78 @@ function bindEvents() {
     renderBackgroundList();
   });
 
+  elements.backgroundSourceSelect.addEventListener("change", async () => {
+    appState.settings.backgroundSource = elements.backgroundSourceSelect.value;
+    onlineBackgroundSeed = createRefreshSeed();
+    await persistSettings();
+    await applyBackground({ notifyFallback: true });
+  });
+
+  elements.customImageApiInput.addEventListener("change", async () => {
+    const value = elements.customImageApiInput.value.trim();
+    if (!value) {
+      appState.settings.customImageApiUrl = "";
+      await persistSettings();
+      return;
+    }
+    try {
+      appState.settings.customImageApiUrl = normalizeImageApiTemplate(value);
+      onlineBackgroundSeed = createRefreshSeed();
+      await persistSettings();
+      if (appState.settings.backgroundSource === "custom") {
+        await applyBackground({ notifyFallback: true });
+      }
+      showToast(t("toast.saved"));
+    } catch {
+      elements.customImageApiInput.value = appState.settings.customImageApiUrl;
+      showToast(t("background.customMissing"));
+    }
+  });
+
+  elements.refreshBackgroundButton.addEventListener("click", async () => {
+    if (appState.settings.backgroundSource === "local") {
+      showToast(t("background.localOnly"));
+      return;
+    }
+    if (appState.settings.backgroundSource === "custom" && !appState.settings.customImageApiUrl) {
+      showToast(t("background.customMissing"));
+      return;
+    }
+    onlineBackgroundSeed = createRefreshSeed();
+    await applyBackground({ notifyFallback: true });
+  });
+
+  elements.showClockToggle.addEventListener("change", async () => {
+    appState.settings.showClock = elements.showClockToggle.checked;
+    await persistSettings();
+    updateClock();
+  });
+
+  elements.clockFormatSelect.addEventListener("change", async () => {
+    appState.settings.clockFormat = elements.clockFormatSelect.value;
+    await persistSettings();
+    updateClock();
+  });
+
+  elements.languageSelect.addEventListener("change", async () => {
+    appState.settings.language = elements.languageSelect.value;
+    setLocale(resolveLocale(appState.settings.language));
+    translatePage();
+    await persistSettings();
+    updateClock();
+    render();
+  });
+
   elements.imageFileInput.addEventListener("change", handleImageFiles);
   elements.imageUrlForm.addEventListener("submit", handleImageUrlSubmit);
   elements.shortcutForm.addEventListener("submit", handleShortcutSubmit);
   elements.resetButton.addEventListener("click", handleReset);
 
   document.addEventListener("keydown", (event) => {
+    if (event.key === "Tab" && elements.body.classList.contains("panel-open")) {
+      trapSettingsFocus(event);
+      return;
+    }
     if (event.key !== "Escape") {
       return;
     }
@@ -168,11 +260,16 @@ function bindEvents() {
 
 function updateClock() {
   const now = new Date();
-  elements.clock.textContent = new Intl.DateTimeFormat("de-DE", {
+  const format = appState.settings.clockFormat;
+  const options = {
     hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).format(now);
+    minute: "2-digit"
+  };
+  if (format === "12" || format === "24") {
+    options.hour12 = format === "12";
+  }
+  elements.clock.hidden = !appState.settings.showClock;
+  elements.clock.textContent = new Intl.DateTimeFormat(getLocale(), options).format(now);
   elements.clock.setAttribute("datetime", now.toISOString());
 }
 
@@ -189,14 +286,14 @@ function handleSearchSubmit(event) {
 async function handleSearchProviderSubmit(event) {
   event.preventDefault();
   if (appState.settings.searchProviders.length >= 3) {
-    showToast("Maximal drei Suchbuttons.");
+    showToast(t("searchSettings.max"));
     return;
   }
 
   const label = elements.providerLabelInput.value.trim();
   const rawUrl = elements.providerUrlInput.value.trim();
   if (!label || !rawUrl) {
-    showToast("Name und Such-URL fehlen.");
+    showToast(t("toast.nameUrlMissing"));
     return;
   }
 
@@ -212,9 +309,10 @@ async function handleSearchProviderSubmit(event) {
     elements.providerUrlInput.value = "";
     await persistSettings();
     render();
-    showToast("Suchbutton gespeichert.");
+    showToast(t("toast.providerSaved"));
   } catch (error) {
-    showToast(error.message || "Such-URL ist ungueltig.");
+    console.warn(error);
+    showToast(t("toast.invalidUrl"));
   }
 }
 
@@ -232,10 +330,10 @@ async function handleImageFiles(event) {
     await saveCustomImages(appState.customImages);
     await applyBackground();
     render();
-    showToast(imported.length === 1 ? "Bild gespeichert." : `${imported.length} Bilder gespeichert.`);
+    showToast(imported.length === 1 ? t("toast.imageSaved") : t("toast.imagesSaved", { count: imported.length }));
   } catch (error) {
     console.error(error);
-    showToast(error.message || "Bild konnte nicht gespeichert werden.");
+    showToast(t("toast.imageError"));
   } finally {
     elements.imageFileInput.value = "";
   }
@@ -254,10 +352,10 @@ async function handleImageUrlSubmit(event) {
     elements.imageUrlInput.value = "";
     await applyBackground();
     render();
-    showToast("Bild-URL lokal gespeichert.");
+    showToast(t("toast.imageUrlSaved"));
   } catch (error) {
     console.error(error);
-    showToast(error.message || "Bild-URL konnte nicht importiert werden.");
+    showToast(t("toast.imageUrlError"));
   }
 }
 
@@ -266,7 +364,7 @@ async function handleShortcutSubmit(event) {
   const name = elements.shortcutNameInput.value.trim();
   const rawUrl = elements.shortcutUrlInput.value.trim();
   if (!name || !rawUrl) {
-    showToast("Name und URL fehlen.");
+    showToast(t("toast.nameUrlMissing"));
     return;
   }
   try {
@@ -287,14 +385,15 @@ async function handleShortcutSubmit(event) {
     elements.shortcutUrlInput.value = "";
     elements.shortcutIconInput.value = "";
     render();
-    showToast("Shortcut gespeichert.");
+    showToast(t("toast.shortcutSaved"));
   } catch (error) {
-    showToast(error.message || "URL ist ungueltig.");
+    console.warn(error);
+    showToast(t("toast.invalidUrl"));
   }
 }
 
 async function handleReset() {
-  const confirmed = confirm("Alle lokalen Einstellungen, Bilder, Shortcuts und Pins dieser Extension loeschen?");
+  const confirmed = confirm(t("data.confirm"));
   if (!confirmed) {
     return;
   }
@@ -302,15 +401,39 @@ async function handleReset() {
   location.reload();
 }
 
-async function applyBackground() {
-  const selected = selectBackground(appState.customImages, appState.settings);
+async function applyBackground({ notifyFallback = false } = {}) {
+  const fallback = selectBackground(appState.customImages, appState.settings);
+  let online = null;
+  try {
+    online = createOnlineBackground(appState.settings, onlineBackgroundSeed || createRefreshSeed());
+  } catch (error) {
+    console.warn("Online background configuration is invalid", error);
+  }
+
+  let selected = online;
+  if (selected) {
+    const loaded = await waitForImage(selected.src).then(() => true).catch(() => false);
+    if (!loaded) {
+      selected = fallback;
+      if (notifyFallback) {
+        showToast(t("background.apiUnavailable"));
+      }
+    }
+  } else {
+    selected = fallback;
+  }
+
   if (!selected) {
+    elements.backgroundLayer.style.backgroundImage = "none";
     return;
+  }
+
+  if (selected !== online) {
+    await waitForImage(selected.src).catch(() => null);
   }
   elements.backgroundLayer.classList.remove("loaded");
   setElementBackground(elements.backgroundLayer, selected.src);
-  await waitForImage(selected.src).catch(() => null);
-  elements.backgroundLayer.classList.add("loaded");
+  requestAnimationFrame(() => elements.backgroundLayer.classList.add("loaded"));
 }
 
 function applySettingsToPage() {
@@ -319,7 +442,15 @@ function applySettingsToPage() {
   elements.themeSelect.value = appState.settings.theme;
   elements.focusModeToggle.checked = appState.settings.focusMode;
   elements.defaultTilesToggle.checked = appState.settings.showDefaultTiles;
+  elements.showClockToggle.checked = appState.settings.showClock;
+  elements.clockFormatSelect.value = appState.settings.clockFormat;
+  elements.clockFormatSelect.querySelector('option[value="auto"]').textContent = `${t("clock.auto")} (${getLocale()})`;
+  elements.languageSelect.value = appState.settings.language;
   elements.backgroundModeSelect.value = appState.settings.backgroundMode;
+  elements.backgroundSourceSelect.value = appState.settings.backgroundSource;
+  elements.customImageApiInput.value = appState.settings.customImageApiUrl;
+  elements.customApiSettings.hidden = appState.settings.backgroundSource !== "custom";
+  elements.refreshBackgroundButton.disabled = appState.settings.backgroundSource === "local" || appState.settings.backgroundMode === "fixed";
   renderSearchProviders();
 }
 
@@ -339,12 +470,24 @@ function renderSearchProviders() {
 
 function render() {
   applySettingsToPage();
+  renderDefaultSearchSelect();
   renderPinned();
   renderQuickAccess();
   renderBackgroundList();
   renderSearchProviderList();
   renderShortcutList();
   renderDefaultTileIconList();
+}
+
+function renderDefaultSearchSelect() {
+  clearNode(elements.defaultSearchSelect);
+  for (const provider of getSearchProviders()) {
+    const option = document.createElement("option");
+    option.value = provider.id;
+    option.textContent = provider.label;
+    option.selected = provider.id === getActiveSearchProvider().id;
+    elements.defaultSearchSelect.append(option);
+  }
 }
 
 function renderPinned() {
@@ -395,20 +538,20 @@ function renderSearchProviderList() {
     labelInput.type = "text";
     labelInput.value = provider.label;
     labelInput.maxLength = 14;
-    labelInput.ariaLabel = "Suchbutton-Name";
+    labelInput.ariaLabel = t("common.name");
 
     const urlInput = document.createElement("input");
     urlInput.type = "text";
     urlInput.value = provider.url;
-    urlInput.ariaLabel = "Such-URL";
+    urlInput.ariaLabel = t("searchSettings.url");
 
     const actions = document.createElement("div");
     actions.className = "item-actions";
 
-    const saveButton = smallButton("Speichern");
+    const saveButton = smallButton(t("common.save"));
     saveButton.type = "submit";
 
-    const deleteButton = iconButton("trash", "Suchbutton loeschen");
+    const deleteButton = iconButton("trash", t("common.delete"));
     deleteButton.disabled = providers.length <= 1;
     deleteButton.addEventListener("click", async () => {
       appState.settings.searchProviders = appState.settings.searchProviders.filter((itemProvider) => itemProvider.id !== provider.id);
@@ -417,14 +560,14 @@ function renderSearchProviderList() {
       }
       await persistSettings();
       render();
-      showToast("Suchbutton geloescht.");
+      showToast(t("toast.providerDeleted"));
     });
 
     item.addEventListener("submit", async (event) => {
       event.preventDefault();
       const label = labelInput.value.trim();
       if (!label) {
-        showToast("Name fehlt.");
+        showToast(t("toast.nameMissing"));
         return;
       }
       try {
@@ -436,9 +579,10 @@ function renderSearchProviderList() {
         ));
         await persistSettings();
         render();
-        showToast("Suchbutton aktualisiert.");
+        showToast(t("toast.providerUpdated"));
       } catch (error) {
-        showToast(error.message || "Such-URL ist ungueltig.");
+        console.warn(error);
+        showToast(t("toast.invalidUrl"));
       }
     });
 
@@ -466,15 +610,15 @@ function renderBackgroundList() {
     copy.className = "item-copy";
 
     const name = document.createElement("strong");
-    name.textContent = image.name;
+    name.textContent = image.nameKey ? t(image.nameKey) : image.name;
 
     const meta = document.createElement("span");
-    meta.textContent = image.type === "builtin" ? "Lokal gebuendelt" : "Lokal gespeichert";
+    meta.textContent = image.type === "builtin" ? t("background.builtin") : t("background.custom");
 
     const actions = document.createElement("div");
     actions.className = "item-actions";
 
-    const fixedButton = smallButton(appState.settings.fixedBackgroundId === image.id ? "Festgelegt" : "Festlegen");
+    const fixedButton = smallButton(appState.settings.fixedBackgroundId === image.id ? t("background.setActive") : t("background.set"));
     fixedButton.disabled = appState.settings.fixedBackgroundId === image.id && appState.settings.backgroundMode === "fixed";
     fixedButton.addEventListener("click", async () => {
       appState.settings.backgroundMode = "fixed";
@@ -486,7 +630,7 @@ function renderBackgroundList() {
     actions.append(fixedButton);
 
     const isDisabled = disabled.has(image.id);
-    const toggleButton = smallButton(isDisabled ? "Einblenden" : "Ausblenden");
+    const toggleButton = smallButton(isDisabled ? t("background.show") : t("background.hide"));
     toggleButton.disabled = !isDisabled && enabled.length <= 1;
     toggleButton.addEventListener("click", async () => {
       const next = new Set(appState.settings.disabledBackgrounds);
@@ -503,7 +647,7 @@ function renderBackgroundList() {
     actions.append(toggleButton);
 
     if (image.type === "custom") {
-      const deleteButton = smallButton("Loeschen");
+      const deleteButton = smallButton(t("common.delete"));
       deleteButton.addEventListener("click", async () => {
         appState.customImages = appState.customImages.filter((custom) => custom.id !== image.id);
         appState.settings.disabledBackgrounds = appState.settings.disabledBackgrounds.filter((id) => id !== image.id);
@@ -531,7 +675,7 @@ function renderShortcutList() {
   if (!appState.shortcuts.length) {
     const note = document.createElement("p");
     note.className = "empty-note";
-    note.textContent = "Noch keine eigenen Shortcuts gespeichert.";
+    note.textContent = t("websites.empty");
     elements.shortcutList.append(note);
     return;
   }
@@ -541,7 +685,7 @@ function renderShortcutList() {
     item.className = "shortcut-item";
 
     const iconEditor = createIconEditor({
-      label: "Shortcut-Icon",
+      label: t("common.icon"),
       title: shortcut.name,
       domain: getDomain(shortcut.url),
       icon: shortcut.icon,
@@ -551,7 +695,7 @@ function renderShortcutList() {
         ));
         await saveShortcuts(appState.shortcuts);
         render();
-        showToast("Icon entfernt.");
+        showToast(t("toast.iconRemoved"));
       }
     });
 
@@ -559,25 +703,25 @@ function renderShortcutList() {
     nameInput.type = "text";
     nameInput.value = shortcut.name;
     nameInput.maxLength = 36;
-    nameInput.ariaLabel = "Shortcut-Name";
+    nameInput.ariaLabel = t("common.name");
 
     const urlInput = document.createElement("input");
     urlInput.type = "text";
     urlInput.value = shortcut.url;
-    urlInput.ariaLabel = "Shortcut-URL";
+    urlInput.ariaLabel = "URL";
 
     const actions = document.createElement("div");
     actions.className = "item-actions";
 
-    const saveButton = smallButton("Speichern");
+    const saveButton = smallButton(t("common.save"));
     saveButton.type = "submit";
 
-    const deleteButton = iconButton("trash", "Shortcut loeschen");
+    const deleteButton = iconButton("trash", t("common.delete"));
     deleteButton.addEventListener("click", async () => {
       appState.shortcuts = appState.shortcuts.filter((itemShortcut) => itemShortcut.id !== shortcut.id);
       await saveShortcuts(appState.shortcuts);
       render();
-      showToast("Shortcut geloescht.");
+      showToast(t("toast.shortcutDeleted"));
     });
 
     item.addEventListener("submit", async (event) => {
@@ -586,7 +730,7 @@ function renderShortcutList() {
         const url = normalizeWebUrl(urlInput.value);
         const name = nameInput.value.trim();
         if (!name) {
-          showToast("Name fehlt.");
+          showToast(t("toast.nameMissing"));
           return;
         }
         const iconFile = iconEditor.input.files[0];
@@ -598,9 +742,10 @@ function renderShortcutList() {
         ));
         await saveShortcuts(appState.shortcuts);
         render();
-        showToast("Shortcut aktualisiert.");
+        showToast(t("toast.shortcutUpdated"));
       } catch (error) {
-        showToast(error.message || "URL ist ungueltig.");
+        console.warn(error);
+        showToast(t("toast.invalidUrl"));
       }
     });
 
@@ -630,7 +775,7 @@ function renderDefaultTileIconList() {
             appState.settings.tileIconOverrides = next;
             await persistSettings();
             render();
-            showToast("Standard-Icon wiederhergestellt.");
+            showToast(t("toast.iconRestored"));
           }
         : null
     });
@@ -648,9 +793,10 @@ function renderDefaultTileIconList() {
         };
         await persistSettings();
         render();
-        showToast("Icon gespeichert.");
+        showToast(t("toast.iconSaved"));
       } catch (error) {
-        showToast(error.message || "Icon konnte nicht gespeichert werden.");
+        console.warn(error);
+        showToast(t("toast.iconError"));
       }
     });
 
@@ -684,15 +830,9 @@ function createTile(item) {
   iconWrap.className = "tile-icon";
 
   if (isDisplayableIcon(item.icon)) {
-    const img = document.createElement("img");
-    img.src = item.icon;
-    img.alt = "";
-    iconWrap.append(img);
+    appendImageWithFallback(iconWrap, item.icon, item.title || item.domain);
   } else if (item.favicon && item.favicon.startsWith("data:image/")) {
-    const img = document.createElement("img");
-    img.src = item.favicon;
-    img.alt = "";
-    iconWrap.append(img);
+    appendImageWithFallback(iconWrap, item.favicon, item.title || item.domain);
   } else {
     const initial = document.createElement("span");
     initial.textContent = initialFor(item.title || item.domain);
@@ -704,7 +844,7 @@ function createTile(item) {
 
   const title = document.createElement("span");
   title.className = "tile-title";
-  title.textContent = item.title || item.domain || "Website";
+  title.textContent = item.title || item.domain || t("tiles.website");
 
   const domain = document.createElement("span");
   domain.className = "tile-domain";
@@ -716,7 +856,7 @@ function createTile(item) {
   const pinButton = document.createElement("button");
   pinButton.className = "tile-pin";
   pinButton.type = "button";
-  pinButton.title = isPinned(item.url) ? "Pin loesen" : "Anpinnen";
+  pinButton.title = isPinned(item.url) ? t("tiles.unpin") : t("tiles.pin");
   pinButton.ariaLabel = pinButton.title;
   pinButton.classList.toggle("active", isPinned(item.url));
   pinButton.append(createIcon("pin"));
@@ -733,7 +873,7 @@ async function togglePin(item) {
     appState.pins = appState.pins.filter((pin) => pinKeyForUrl(pin.url) !== key);
     await savePins(appState.pins);
     render();
-    showToast("Pin geloest.");
+    showToast(t("toast.unpinned"));
     return;
   }
 
@@ -753,7 +893,7 @@ async function togglePin(item) {
   ];
   await savePins(appState.pins);
   render();
-  showToast("Angepinnt.");
+  showToast(t("toast.pinned"));
 }
 
 function isPinned(url) {
@@ -762,21 +902,68 @@ function isPinned(url) {
 }
 
 function openSettings() {
+  lastFocusedElement = document.activeElement;
   elements.panelBackdrop.hidden = false;
   elements.settingsPanel.setAttribute("aria-hidden", "false");
+  elements.settingsPanel.inert = false;
   elements.body.classList.add("panel-open");
-  elements.closeSettingsButton.focus();
+  const activeNavItem = elements.settingsNavItems.find((item) => item.classList.contains("active"));
+  (activeNavItem || elements.closeSettingsButton).focus();
 }
 
 function closeSettings() {
+  if (!elements.body.classList.contains("panel-open")) {
+    return;
+  }
   elements.body.classList.remove("panel-open");
   elements.settingsPanel.setAttribute("aria-hidden", "true");
   window.setTimeout(() => {
     if (!elements.body.classList.contains("panel-open")) {
       elements.panelBackdrop.hidden = true;
+      elements.settingsPanel.inert = true;
     }
   }, 260);
-  elements.settingsButton.focus();
+  if (lastFocusedElement instanceof HTMLElement) {
+    lastFocusedElement.focus();
+  }
+}
+
+function activateSettingsPage(pageName) {
+  let activeButton = null;
+  for (const button of elements.settingsNavItems) {
+    const active = button.dataset.settingsTab === pageName;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    if (active) {
+      activeButton = button;
+    }
+  }
+  for (const page of elements.settingsPages) {
+    const active = page.dataset.settingsPage === pageName;
+    page.classList.toggle("active", active);
+    page.hidden = !active;
+  }
+  elements.settingsPanel.querySelector(".settings-content").scrollTop = 0;
+  if (activeButton && elements.settingsPanel.clientWidth <= 760) {
+    requestAnimationFrame(() => activeButton.scrollIntoView({ block: "nearest", inline: "center" }));
+  }
+}
+
+function trapSettingsFocus(event) {
+  const focusable = [...elements.settingsPanel.querySelectorAll("button:not(:disabled), input:not(:disabled), select:not(:disabled), [href]")]
+    .filter((element) => !element.closest("[hidden]") && element.getClientRects().length);
+  if (!focusable.length) {
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 async function persistSettings() {
@@ -866,7 +1053,7 @@ function createIconEditor({ label, title, domain, icon, onRemove }) {
   uploadLabel.append(createIcon("image"));
 
   const uploadText = document.createElement("span");
-  uploadText.textContent = "Icon";
+  uploadText.textContent = t("common.icon");
   uploadLabel.append(uploadText);
 
   const input = document.createElement("input");
@@ -878,7 +1065,7 @@ function createIconEditor({ label, title, domain, icon, onRemove }) {
   controls.append(uploadLabel);
 
   if (onRemove) {
-    const removeButton = smallButton("Zurueck");
+    const removeButton = smallButton(t("common.restore"));
     removeButton.addEventListener("click", onRemove);
     controls.append(removeButton);
   }
@@ -917,22 +1104,29 @@ function iconButton(iconName, label) {
 function appendIconContent(container, item) {
   clearNode(container);
   if (isDisplayableIcon(item.icon)) {
-    const img = document.createElement("img");
-    img.src = item.icon;
-    img.alt = "";
-    container.append(img);
+    appendImageWithFallback(container, item.icon, item.title || item.domain);
     return;
   }
   if (item.favicon && item.favicon.startsWith("data:image/")) {
-    const img = document.createElement("img");
-    img.src = item.favicon;
-    img.alt = "";
-    container.append(img);
+    appendImageWithFallback(container, item.favicon, item.title || item.domain);
     return;
   }
   const initial = document.createElement("span");
   initial.textContent = initialFor(item.title || item.domain);
   container.append(initial);
+}
+
+function appendImageWithFallback(container, src, label) {
+  const img = document.createElement("img");
+  img.src = src;
+  img.alt = "";
+  img.addEventListener("error", () => {
+    clearNode(container);
+    const initial = document.createElement("span");
+    initial.textContent = initialFor(label);
+    container.append(initial);
+  }, { once: true });
+  container.append(img);
 }
 
 function initialFor(value) {
@@ -953,6 +1147,13 @@ function waitForImage(src) {
     image.addEventListener("error", reject);
     image.src = src;
   });
+}
+
+function createRefreshSeed() {
+  if (crypto?.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function fileToDataUrl(file) {

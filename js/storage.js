@@ -10,7 +10,7 @@ export const STORAGE_KEYS = {
 export const DEFAULT_SEARCH_PROVIDERS = [
   {
     id: "brave",
-    label: "Suche",
+    label: "Brave",
     url: "https://search.brave.com/search?q={query}"
   },
   {
@@ -29,7 +29,12 @@ export const DEFAULT_SETTINGS = {
   theme: "dark",
   showDefaultTiles: true,
   focusMode: false,
+  showClock: true,
+  clockFormat: "auto",
+  language: "auto",
   backgroundMode: "random",
+  backgroundSource: "picsum",
+  customImageApiUrl: "",
   fixedBackgroundId: null,
   disabledBackgrounds: [],
   searchProviderId: "brave",
@@ -141,9 +146,24 @@ function normalizeSettings(value) {
   settings.theme = settings.theme === "light" ? "light" : "dark";
   settings.showDefaultTiles = Boolean(settings.showDefaultTiles);
   settings.focusMode = Boolean(settings.focusMode);
+  settings.showClock = settings.showClock !== false;
+  settings.clockFormat = ["auto", "12", "24"].includes(settings.clockFormat) ? settings.clockFormat : "auto";
+  settings.language = ["auto", "de", "en", "es", "it", "pl", "ru", "fr"].includes(settings.language)
+    ? settings.language
+    : "auto";
   settings.backgroundMode = ["random", "daily", "fixed"].includes(settings.backgroundMode)
     ? settings.backgroundMode
     : DEFAULT_SETTINGS.backgroundMode;
+  settings.backgroundSource = ["local", "picsum", "custom"].includes(settings.backgroundSource)
+    ? settings.backgroundSource
+    : DEFAULT_SETTINGS.backgroundSource;
+  // Existing installations remain local until the user explicitly enables an online source.
+  if (Object.keys(rawSettings).length && !Object.prototype.hasOwnProperty.call(rawSettings, "backgroundSource")) {
+    settings.backgroundSource = "local";
+  }
+  settings.customImageApiUrl = typeof settings.customImageApiUrl === "string"
+    ? settings.customImageApiUrl.trim().slice(0, 2048)
+    : "";
   settings.fixedBackgroundId = typeof settings.fixedBackgroundId === "string" ? settings.fixedBackgroundId : null;
   settings.disabledBackgrounds = normalizeArray(settings.disabledBackgrounds).filter((item) => typeof item === "string");
   settings.searchProviders = normalizeSearchProviders(settings.searchProviders);

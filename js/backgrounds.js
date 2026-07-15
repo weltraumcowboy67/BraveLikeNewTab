@@ -4,24 +4,28 @@ export const BUILTIN_BACKGROUNDS = [
   {
     id: "builtin-misty-lake",
     name: "Nebel am See",
+    nameKey: "background.mistyLake",
     src: runtimeUrl("backgrounds/misty-lake.png"),
     type: "builtin"
   },
   {
     id: "builtin-canyon-dusk",
     name: "Canyonlicht",
+    nameKey: "background.canyonDusk",
     src: runtimeUrl("backgrounds/canyon-dusk.png"),
     type: "builtin"
   },
   {
     id: "builtin-basalt-coast",
     name: "Basaltkueste",
+    nameKey: "background.basaltCoast",
     src: runtimeUrl("backgrounds/basalt-coast.png"),
     type: "builtin"
   },
   {
     id: "builtin-forest-meadow",
     name: "Waldlichtung",
+    nameKey: "background.forestMeadow",
     src: runtimeUrl("backgrounds/forest-meadow.png"),
     type: "builtin"
   }
@@ -63,6 +67,50 @@ export function selectBackground(customImages, settings) {
   return backgrounds[randomIndex(backgrounds.length)];
 }
 
+export function createOnlineBackground(settings, refreshSeed = "") {
+  if (settings.backgroundSource === "local" || settings.backgroundMode === "fixed") {
+    return null;
+  }
+
+  const seed = settings.backgroundMode === "daily"
+    ? new Date().toISOString().slice(0, 10)
+    : refreshSeed || createRandomSeed();
+
+  if (settings.backgroundSource === "picsum") {
+    return {
+      id: `picsum-${seed}`,
+      name: "Picsum Photos",
+      src: `https://picsum.photos/seed/${encodeURIComponent(seed)}/1920/1200.webp`,
+      type: "api"
+    };
+  }
+
+  if (settings.backgroundSource === "custom" && settings.customImageApiUrl) {
+    return {
+      id: `custom-api-${seed}`,
+      name: "Custom API",
+      src: buildCustomImageUrl(settings.customImageApiUrl, seed),
+      type: "api"
+    };
+  }
+
+  return null;
+}
+
+export function normalizeImageApiTemplate(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) {
+    throw new Error("Image API URL is missing.");
+  }
+  const marker = "IMAGE_API_PLACEHOLDER";
+  const marked = trimmed.replaceAll("{width}", marker).replaceAll("{height}", marker).replaceAll("{seed}", marker);
+  const parsed = new URL(marked);
+  if (parsed.protocol !== "https:") {
+    throw new Error("Only HTTPS image API URLs are allowed.");
+  }
+  return trimmed.slice(0, 2048);
+}
+
 export async function importImageFile(file) {
   if (!file || !file.type?.startsWith("image/")) {
     throw new Error("Diese Datei ist kein Bild.");
@@ -79,6 +127,7 @@ export async function importImageFile(file) {
 
 export async function importImageUrl(input) {
   const url = normalizeWebUrl(input);
+  await requestImageHostPermission(url);
   const response = await fetch(url, {
     mode: "cors",
     credentials: "omit",
@@ -105,6 +154,23 @@ export async function importImageUrl(input) {
   };
 }
 
+async function requestImageHostPermission(url) {
+  const permissions = extensionApi?.permissions;
+  if (!permissions?.contains || !permissions?.request) {
+    return;
+  }
+  const parsed = new URL(url);
+  const origin = `${parsed.protocol}//${parsed.host}/*`;
+  const hasPermission = await permissions.contains({ origins: [origin] });
+  if (hasPermission) {
+    return;
+  }
+  const granted = await permissions.request({ origins: [origin] });
+  if (!granted) {
+    throw new Error("Permission to load this image was denied.");
+  }
+}
+
 export function setElementBackground(element, src) {
   element.style.backgroundImage = `url("${String(src).replace(/"/g, '\\"')}")`;
 }
@@ -120,6 +186,21 @@ function randomIndex(length) {
     return array[0] % length;
   }
   return Math.floor(Math.random() * length);
+}
+
+function createRandomSeed() {
+  if (crypto?.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function buildCustomImageUrl(template, seed) {
+  const normalized = normalizeImageApiTemplate(template);
+  return normalized
+    .replaceAll("{width}", "1920")
+    .replaceAll("{height}", "1200")
+    .replaceAll("{seed}", encodeURIComponent(seed));
 }
 
 function stableIndex(value, length) {
