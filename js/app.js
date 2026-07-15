@@ -1,5 +1,6 @@
 import {
   createId,
+  DEFAULT_SETTINGS,
   DEFAULT_SEARCH_PROVIDERS,
   getDomain,
   loadState,
@@ -32,6 +33,7 @@ const elements = {
   root: document.documentElement,
   body: document.body,
   backgroundLayer: document.querySelector("#backgroundLayer"),
+  backgroundLayerNext: document.querySelector("#backgroundLayerNext"),
   clock: document.querySelector("#clock"),
   settingsButton: document.querySelector("#settingsButton"),
   closeSettingsButton: document.querySelector("#closeSettingsButton"),
@@ -45,6 +47,9 @@ const elements = {
   quickSection: document.querySelector("#quickSection"),
   quickGrid: document.querySelector("#quickGrid"),
   themeSelect: document.querySelector("#themeSelect"),
+  accentColorInput: document.querySelector("#accentColorInput"),
+  resetAccentButton: document.querySelector("#resetAccentButton"),
+  lightModeWarning: document.querySelector("#lightModeWarning"),
   focusModeToggle: document.querySelector("#focusModeToggle"),
   defaultTilesToggle: document.querySelector("#defaultTilesToggle"),
   defaultSearchSelect: document.querySelector("#defaultSearchSelect"),
@@ -54,6 +59,8 @@ const elements = {
   searchProviderList: document.querySelector("#searchProviderList"),
   backgroundModeSelect: document.querySelector("#backgroundModeSelect"),
   backgroundSourceSelect: document.querySelector("#backgroundSourceSelect"),
+  imageApiCategorySelect: document.querySelector("#imageApiCategorySelect"),
+  preloadOnlineImagesToggle: document.querySelector("#preloadOnlineImagesToggle"),
   customApiSettings: document.querySelector("#customApiSettings"),
   customImageApiInput: document.querySelector("#customImageApiInput"),
   refreshBackgroundButton: document.querySelector("#refreshBackgroundButton"),
@@ -85,7 +92,17 @@ let appState = {
 
 let toastTimer = null;
 let onlineBackgroundSeed = "";
+let nextOnlineBackgroundSeed = "";
 let lastFocusedElement = null;
+let activeBackgroundLayer = elements.backgroundLayer;
+let standbyBackgroundLayer = elements.backgroundLayerNext;
+let backgroundRequestId = 0;
+const cancelableImageLoads = new Map();
+let resumeOnlineLoadsAfterSettings = false;
+let onlineBackgroundWasPreloaded = false;
+const NEXT_BACKGROUND_SEED_KEY = "benni-newtab-next-background-seed";
+const PRELOADED_BACKGROUND_SEED_KEY = "benni-newtab-preloaded-background-seed";
+const renderedSettingsPages = new Set();
 
 init().catch((error) => {
   console.error(error);
@@ -96,12 +113,15 @@ async function init() {
   appState = { ...appState, ...(await loadState()) };
   setLocale(resolveLocale(appState.settings.language));
   translatePage();
+  prepareBackgroundSeeds();
   applySettingsToPage();
   bindEvents();
   updateClock();
   setInterval(updateClock, 1000);
-  await applyBackground();
+  const backgroundReady = applyBackground();
   render();
+  scheduleSettingsPrewarm();
+  await backgroundReady;
 }
 
 function bindEvents() {
@@ -141,6 +161,23 @@ function bindEvents() {
     appState.settings.theme = elements.themeSelect.value === "light" ? "light" : "dark";
     applySettingsToPage();
     await persistSettings();
+    if (appState.settings.theme === "light") {
+      showToast(t("appearance.lightWarningTitle"));
+    }
+  });
+
+  elements.accentColorInput.addEventListener("input", () => {
+    elements.root.style.setProperty("--settings-accent", elements.accentColorInput.value);
+  });
+
+  elements.accentColorInput.addEventListener("change", async () => {
+    appState.settings.accentColor = elements.accentColorInput.value;
+    await persistSettings();
+  });
+
+  elements.resetAccentButton.addEventListener("click", async () => {
+    appState.settings.accentColor = DEFAULT_SETTINGS.accentColor;
+    await persistSettings();
   });
 
   elements.focusModeToggle.addEventListener("change", async () => {
@@ -165,6 +202,7 @@ function bindEvents() {
 
   elements.backgroundModeSelect.addEventListener("change", async () => {
     appState.settings.backgroundMode = elements.backgroundModeSelect.value;
+    rotateBackgroundSeeds();
     if (appState.settings.backgroundMode === "fixed" && !appState.settings.fixedBackgroundId) {
       const current = selectBackground(appState.customImages, appState.settings);
       appState.settings.fixedBackgroundId = current?.id || BUILTIN_BACKGROUNDS[0].id;
@@ -176,9 +214,24 @@ function bindEvents() {
 
   elements.backgroundSourceSelect.addEventListener("change", async () => {
     appState.settings.backgroundSource = elements.backgroundSourceSelect.value;
-    onlineBackgroundSeed = createRefreshSeed();
+    rotateBackgroundSeeds();
     await persistSettings();
     await applyBackground({ notifyFallback: true });
+  });
+
+  elements.imageApiCategorySelect.addEventListener("change", async () => {
+    appState.settings.imageApiCategory = elements.imageApiCategorySelect.value;
+    rotateBackgroundSeeds();
+    await persistSettings();
+    await applyBackground({ notifyFallback: true });
+  });
+
+  elements.preloadOnlineImagesToggle.addEventListener("change", async () => {
+    appState.settings.preloadOnlineImages = elements.preloadOnlineImagesToggle.checked;
+    await persistSettings();
+    if (appState.settings.preloadOnlineImages) {
+      scheduleNextBackgroundPreload();
+    }
   });
 
   elements.customImageApiInput.addEventListener("change", async () => {
@@ -190,7 +243,7 @@ function bindEvents() {
     }
     try {
       appState.settings.customImageApiUrl = normalizeImageApiTemplate(value);
-      onlineBackgroundSeed = createRefreshSeed();
+      rotateBackgroundSeeds();
       await persistSettings();
       if (appState.settings.backgroundSource === "custom") {
         await applyBackground({ notifyFallback: true });
@@ -211,7 +264,7 @@ function bindEvents() {
       showToast(t("background.customMissing"));
       return;
     }
-    onlineBackgroundSeed = createRefreshSeed();
+    rotateBackgroundSeeds();
     await applyBackground({ notifyFallback: true });
   });
 
@@ -402,44 +455,66 @@ async function handleReset() {
 }
 
 async function applyBackground({ notifyFallback = false } = {}) {
+  const requestId = ++backgroundRequestId;
   const fallback = selectBackground(appState.customImages, appState.settings);
   let online = null;
   try {
-    online = createOnlineBackground(appState.settings, onlineBackgroundSeed || createRefreshSeed());
+    online = createOnlineBackground(getOnlineBackgroundSettings(), onlineBackgroundSeed || createRefreshSeed());
   } catch (error) {
     console.warn("Online background configuration is invalid", error);
   }
 
-  let selected = online;
-  if (selected) {
-    const loaded = await waitForImage(selected.src).then(() => true).catch(() => false);
-    if (!loaded) {
-      selected = fallback;
-      if (notifyFallback) {
-        showToast(t("background.apiUnavailable"));
-      }
+  if (fallback && !activeBackgroundLayer.classList.contains("loaded")) {
+    await waitForImage(fallback.src, 1200).catch(() => null);
+    if (requestId !== backgroundRequestId) {
+      return;
     }
-  } else {
-    selected = fallback;
+    showBackground(fallback.src, { immediate: true });
   }
 
-  if (!selected) {
-    elements.backgroundLayer.style.backgroundImage = "none";
+  if (!online) {
+    if (fallback && activeBackgroundLayer.style.backgroundImage !== `url("${fallback.src}")`) {
+      await waitForImage(fallback.src, 1200).catch(() => null);
+      if (requestId === backgroundRequestId) {
+        showBackground(fallback.src);
+      }
+    }
     return;
   }
 
-  if (selected !== online) {
-    await waitForImage(selected.src).catch(() => null);
+  if (!onlineBackgroundWasPreloaded) {
+    await delay(350);
   }
-  elements.backgroundLayer.classList.remove("loaded");
-  setElementBackground(elements.backgroundLayer, selected.src);
-  requestAnimationFrame(() => elements.backgroundLayer.classList.add("loaded"));
+  if (requestId !== backgroundRequestId) {
+    return;
+  }
+  if (elements.body.classList.contains("panel-open")) {
+    resumeOnlineLoadsAfterSettings = true;
+    return;
+  }
+
+  const loaded = await waitForImage(online.src, 5000, { cancelOnSettings: true }).then(() => true).catch(() => false);
+  if (requestId !== backgroundRequestId) {
+    return;
+  }
+  if (!loaded) {
+    if (notifyFallback) {
+      showToast(t("background.apiUnavailable"));
+    }
+    return;
+  }
+  showBackground(online.src);
+  onlineBackgroundWasPreloaded = false;
+  scheduleNextBackgroundPreload();
 }
 
 function applySettingsToPage() {
   elements.root.dataset.theme = appState.settings.theme;
+  elements.root.style.setProperty("--settings-accent", appState.settings.accentColor);
   elements.body.classList.toggle("focus-mode", appState.settings.focusMode);
   elements.themeSelect.value = appState.settings.theme;
+  elements.accentColorInput.value = appState.settings.accentColor;
+  elements.lightModeWarning.hidden = appState.settings.theme !== "light";
   elements.focusModeToggle.checked = appState.settings.focusMode;
   elements.defaultTilesToggle.checked = appState.settings.showDefaultTiles;
   elements.showClockToggle.checked = appState.settings.showClock;
@@ -448,6 +523,10 @@ function applySettingsToPage() {
   elements.languageSelect.value = appState.settings.language;
   elements.backgroundModeSelect.value = appState.settings.backgroundMode;
   elements.backgroundSourceSelect.value = appState.settings.backgroundSource;
+  elements.imageApiCategorySelect.value = appState.settings.imageApiCategory;
+  elements.imageApiCategorySelect.disabled = appState.settings.backgroundSource === "local";
+  elements.preloadOnlineImagesToggle.checked = appState.settings.preloadOnlineImages;
+  elements.preloadOnlineImagesToggle.disabled = appState.settings.backgroundSource === "local" || appState.settings.backgroundMode === "fixed";
   elements.customImageApiInput.value = appState.settings.customImageApiUrl;
   elements.customApiSettings.hidden = appState.settings.backgroundSource !== "custom";
   elements.refreshBackgroundButton.disabled = appState.settings.backgroundSource === "local" || appState.settings.backgroundMode === "fixed";
@@ -470,13 +549,31 @@ function renderSearchProviders() {
 
 function render() {
   applySettingsToPage();
-  renderDefaultSearchSelect();
   renderPinned();
   renderQuickAccess();
-  renderBackgroundList();
-  renderSearchProviderList();
-  renderShortcutList();
-  renderDefaultTileIconList();
+  if (elements.body.classList.contains("panel-open")) {
+    renderSettingsPage(getActiveSettingsPage(), { force: true });
+  }
+}
+
+function getActiveSettingsPage() {
+  return elements.settingsPages.find((page) => !page.hidden)?.dataset.settingsPage || "appearance";
+}
+
+function renderSettingsPage(pageName, { force = false } = {}) {
+  if (!force && renderedSettingsPages.has(pageName)) {
+    return;
+  }
+  if (pageName === "background") {
+    renderBackgroundList();
+  } else if (pageName === "search") {
+    renderDefaultSearchSelect();
+    renderSearchProviderList();
+  } else if (pageName === "websites") {
+    renderShortcutList();
+    renderDefaultTileIconList();
+  }
+  renderedSettingsPages.add(pageName);
 }
 
 function renderDefaultSearchSelect() {
@@ -602,9 +699,12 @@ function renderBackgroundList() {
     const item = document.createElement("div");
     item.className = "background-item";
 
-    const preview = document.createElement("div");
+    const preview = document.createElement("img");
     preview.className = "background-preview";
-    setElementBackground(preview, image.src);
+    preview.src = image.src;
+    preview.alt = "";
+    preview.loading = "lazy";
+    preview.decoding = "async";
 
     const copy = document.createElement("div");
     copy.className = "item-copy";
@@ -903,12 +1003,31 @@ function isPinned(url) {
 
 function openSettings() {
   lastFocusedElement = document.activeElement;
-  elements.panelBackdrop.hidden = false;
+  elements.settingsPanel.classList.remove("settings-prewarm");
+  if (cancelPerformanceSensitiveImageLoads()) {
+    resumeOnlineLoadsAfterSettings = true;
+  }
   elements.settingsPanel.setAttribute("aria-hidden", "false");
   elements.settingsPanel.inert = false;
   elements.body.classList.add("panel-open");
   const activeNavItem = elements.settingsNavItems.find((item) => item.classList.contains("active"));
   (activeNavItem || elements.closeSettingsButton).focus();
+}
+
+function scheduleSettingsPrewarm() {
+  const prewarm = () => {
+    if (elements.body.classList.contains("panel-open")) {
+      return;
+    }
+    elements.settingsPanel.classList.add("settings-prewarm");
+    void elements.settingsPanel.offsetWidth;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.setTimeout(() => elements.settingsPanel.classList.remove("settings-prewarm"), 80);
+      });
+    });
+  };
+  requestAnimationFrame(() => window.setTimeout(prewarm, 0));
 }
 
 function closeSettings() {
@@ -917,14 +1036,13 @@ function closeSettings() {
   }
   elements.body.classList.remove("panel-open");
   elements.settingsPanel.setAttribute("aria-hidden", "true");
-  window.setTimeout(() => {
-    if (!elements.body.classList.contains("panel-open")) {
-      elements.panelBackdrop.hidden = true;
-      elements.settingsPanel.inert = true;
-    }
-  }, 260);
+  elements.settingsPanel.inert = true;
   if (lastFocusedElement instanceof HTMLElement) {
     lastFocusedElement.focus();
+  }
+  if (resumeOnlineLoadsAfterSettings) {
+    resumeOnlineLoadsAfterSettings = false;
+    window.setTimeout(() => applyBackground(), 220);
   }
 }
 
@@ -943,6 +1061,7 @@ function activateSettingsPage(pageName) {
     page.classList.toggle("active", active);
     page.hidden = !active;
   }
+  renderSettingsPage(pageName);
   elements.settingsPanel.querySelector(".settings-content").scrollTop = 0;
   if (activeButton && elements.settingsPanel.clientWidth <= 760) {
     requestAnimationFrame(() => activeButton.scrollIntoView({ block: "nearest", inline: "center" }));
@@ -1140,13 +1259,112 @@ function clearNode(node) {
   }
 }
 
-function waitForImage(src) {
+function showBackground(src, { immediate = false } = {}) {
+  if (activeBackgroundLayer.style.backgroundImage.includes(src)) {
+    activeBackgroundLayer.classList.add("loaded");
+    return;
+  }
+
+  if (immediate || !activeBackgroundLayer.classList.contains("loaded")) {
+    setElementBackground(activeBackgroundLayer, src);
+    activeBackgroundLayer.classList.add("loaded");
+    return;
+  }
+
+  const previousLayer = activeBackgroundLayer;
+  const incomingLayer = standbyBackgroundLayer;
+  setElementBackground(incomingLayer, src);
+  incomingLayer.classList.remove("loaded");
+  requestAnimationFrame(() => {
+    incomingLayer.classList.add("loaded");
+    previousLayer.classList.remove("loaded");
+  });
+  activeBackgroundLayer = incomingLayer;
+  standbyBackgroundLayer = previousLayer;
+  window.setTimeout(() => {
+    if (previousLayer !== activeBackgroundLayer) {
+      previousLayer.style.backgroundImage = "none";
+    }
+  }, 520);
+}
+
+function waitForImage(src, timeoutMs = 0, { cancelOnSettings = false } = {}) {
   return new Promise((resolve, reject) => {
     const image = new Image();
-    image.addEventListener("load", resolve);
-    image.addEventListener("error", reject);
+    let timeoutId = null;
+    const settle = (callback) => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+      cancelableImageLoads.delete(image);
+      callback();
+    };
+    image.decoding = "async";
+    image.addEventListener("load", () => settle(resolve), { once: true });
+    image.addEventListener("error", () => settle(() => reject(new Error("Image failed to load."))), { once: true });
+    if (timeoutMs > 0) {
+      timeoutId = window.setTimeout(() => settle(() => reject(new Error("Image load timed out."))), timeoutMs);
+    }
+    if (cancelOnSettings) {
+      cancelableImageLoads.set(image, () => {
+        image.src = "";
+        settle(() => reject(new Error("Image load paused for settings.")));
+      });
+    }
     image.src = src;
   });
+}
+
+function cancelPerformanceSensitiveImageLoads() {
+  const pending = [...cancelableImageLoads.values()];
+  for (const cancel of pending) {
+    cancel();
+  }
+  return pending.length > 0;
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+function prepareBackgroundSeeds() {
+  if (appState.settings.backgroundSource === "local" || appState.settings.backgroundMode !== "random") {
+    onlineBackgroundSeed = createRefreshSeed();
+    nextOnlineBackgroundSeed = createRefreshSeed();
+    return;
+  }
+  onlineBackgroundSeed = localStorage.getItem(NEXT_BACKGROUND_SEED_KEY) || createRefreshSeed();
+  onlineBackgroundWasPreloaded = localStorage.getItem(PRELOADED_BACKGROUND_SEED_KEY) === onlineBackgroundSeed;
+  localStorage.removeItem(PRELOADED_BACKGROUND_SEED_KEY);
+  nextOnlineBackgroundSeed = createRefreshSeed();
+  localStorage.setItem(NEXT_BACKGROUND_SEED_KEY, nextOnlineBackgroundSeed);
+}
+
+function rotateBackgroundSeeds() {
+  onlineBackgroundSeed = createRefreshSeed();
+  onlineBackgroundWasPreloaded = false;
+  nextOnlineBackgroundSeed = createRefreshSeed();
+  localStorage.removeItem(PRELOADED_BACKGROUND_SEED_KEY);
+  localStorage.setItem(NEXT_BACKGROUND_SEED_KEY, nextOnlineBackgroundSeed);
+}
+
+function scheduleNextBackgroundPreload() {
+  if (!appState.settings.preloadOnlineImages || appState.settings.backgroundSource === "local" || appState.settings.backgroundMode !== "random") {
+    return;
+  }
+  const preloadSeed = nextOnlineBackgroundSeed || createRefreshSeed();
+  const nextBackground = createOnlineBackground(getOnlineBackgroundSettings(), preloadSeed);
+  if (!nextBackground) {
+    return;
+  }
+  const preload = () => waitForImage(nextBackground.src, 12000, { cancelOnSettings: true })
+    .then(() => localStorage.setItem(PRELOADED_BACKGROUND_SEED_KEY, preloadSeed))
+    .catch(() => null);
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(preload, { timeout: 1800 });
+  } else {
+    window.setTimeout(preload, 700);
+  }
 }
 
 function createRefreshSeed() {
@@ -1154,6 +1372,12 @@ function createRefreshSeed() {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function getOnlineBackgroundSettings() {
+  const width = Math.min(1920, Math.max(1280, Math.ceil(window.innerWidth / 160) * 160));
+  const height = Math.min(1200, Math.max(800, Math.ceil(window.innerHeight / 100) * 100));
+  return { ...appState.settings, imageWidth: width, imageHeight: height };
 }
 
 function fileToDataUrl(file) {

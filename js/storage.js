@@ -27,6 +27,7 @@ export const DEFAULT_SEARCH_PROVIDERS = [
 
 export const DEFAULT_SETTINGS = {
   theme: "dark",
+  accentColor: "#8274ff",
   showDefaultTiles: true,
   focusMode: false,
   showClock: true,
@@ -34,6 +35,8 @@ export const DEFAULT_SETTINGS = {
   language: "auto",
   backgroundMode: "random",
   backgroundSource: "picsum",
+  imageApiCategory: "all",
+  preloadOnlineImages: true,
   customImageApiUrl: "",
   fixedBackgroundId: null,
   disabledBackgrounds: [],
@@ -144,6 +147,9 @@ function normalizeSettings(value) {
     }
   }
   settings.theme = settings.theme === "light" ? "light" : "dark";
+  settings.accentColor = /^#[0-9a-f]{6}$/i.test(settings.accentColor)
+    ? settings.accentColor.toLowerCase()
+    : DEFAULT_SETTINGS.accentColor;
   settings.showDefaultTiles = Boolean(settings.showDefaultTiles);
   settings.focusMode = Boolean(settings.focusMode);
   settings.showClock = settings.showClock !== false;
@@ -161,6 +167,10 @@ function normalizeSettings(value) {
   if (Object.keys(rawSettings).length && !Object.prototype.hasOwnProperty.call(rawSettings, "backgroundSource")) {
     settings.backgroundSource = "local";
   }
+  settings.imageApiCategory = ["all", "nature", "architecture", "technology", "people", "minimal"].includes(settings.imageApiCategory)
+    ? settings.imageApiCategory
+    : "all";
+  settings.preloadOnlineImages = settings.preloadOnlineImages !== false;
   settings.customImageApiUrl = typeof settings.customImageApiUrl === "string"
     ? settings.customImageApiUrl.trim().slice(0, 2048)
     : "";

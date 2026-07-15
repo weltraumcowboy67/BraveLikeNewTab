@@ -24,6 +24,7 @@
     </svg>
 
     <div id="backgroundLayer" class="background-layer"></div>
+    <div id="backgroundLayerNext" class="background-layer"></div>
     <div class="readability-overlay"></div>
 
     <main class="page-shell" aria-live="polite">
@@ -56,7 +57,7 @@
       </div>
     </main>
 
-    <div id="panelBackdrop" class="panel-backdrop" hidden></div>
+    <div id="panelBackdrop" class="panel-backdrop"></div>
     <aside id="settingsPanel" class="settings-panel" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="settingsTitle" inert>
       <div class="settings-header">
         <h2 id="settingsTitle" data-i18n="settings.heading">Startseite des neuen Tabs personalisieren</h2>
@@ -92,33 +93,41 @@
             <h3 class="settings-page-title" data-i18n="appearance.title">Darstellung</h3>
             <div class="settings-card">
               <label class="setting-row" for="themeSelect"><span data-i18n="appearance.theme">Theme</span>
-                <select id="themeSelect"><option value="dark" data-i18n="appearance.dark">Dunkel</option><option value="light" data-i18n="appearance.light">Hell</option></select>
+                <select id="themeSelect"><option value="dark" data-i18n="appearance.dark">Dunkel (empfohlen)</option><option value="light" data-i18n="appearance.light">Hell (Test)</option></select>
               </label>
               <div class="settings-divider"></div>
               <label class="setting-row switch-row"><span><strong data-i18n="appearance.focus">Fokusmodus</strong><small data-i18n="appearance.focusHelp">Blendet Schnellzugriffe aus.</small></span><input id="focusModeToggle" type="checkbox" role="switch"></label>
+              <div class="settings-divider"></div>
+              <div class="setting-row accent-row"><span><strong data-i18n="appearance.accent">Akzentfarbe</strong><small data-i18n="appearance.accentHelp">Ändert Auswahl, Schalter und Fokusfarbe der Einstellungen.</small></span><div class="accent-controls"><input id="accentColorInput" type="color" value="#8274ff" data-i18n-aria-label="appearance.accent"><button id="resetAccentButton" class="compact-button" type="button" data-i18n="common.reset">Standard</button></div></div>
             </div>
+            <div id="lightModeWarning" class="settings-warning" hidden><strong data-i18n="appearance.lightWarningTitle">Light Mode ist im Test</strong><span data-i18n="appearance.lightWarning">Einzelne Farben oder Kontraste können noch fehlerhaft wirken.</span></div>
           </section>
 
           <section class="settings-page" data-settings-page="background" hidden>
-            <h3 class="settings-page-title" data-i18n="background.title">Hintergrundbild</h3>
+            <div class="settings-page-title-row"><h3 class="settings-page-title" data-i18n="background.title">Hintergrundbild</h3><span class="beta-badge">Beta</span></div>
             <div class="settings-card">
               <label class="setting-row" for="backgroundModeSelect"><span data-i18n="background.change">Bildwechsel</span>
                 <select id="backgroundModeSelect"><option value="random" data-i18n="background.random">Zufällig</option><option value="daily" data-i18n="background.daily">Täglich</option><option value="fixed" data-i18n="background.fixed">Festes Bild</option></select>
               </label>
               <div class="settings-divider"></div>
               <label class="setting-row" for="backgroundSourceSelect"><span><strong data-i18n="background.source">Bildquelle</strong><small data-i18n="background.sourceHelp">Online-Bilder fallen offline automatisch auf lokale Bilder zurück.</small></span>
-                <select id="backgroundSourceSelect"><option value="picsum" data-i18n="background.picsum">Picsum Photos</option><option value="local" data-i18n="background.local">Nur lokal</option><option value="custom" data-i18n="background.customApi">Eigene Bild-API</option></select>
+                <select id="backgroundSourceSelect"><option value="picsum" data-i18n="background.picsum">Picsum Photos (Beta)</option><option value="local" data-i18n="background.local">Nur lokal</option><option value="custom" data-i18n="background.customApi">Eigene Bild-API (Beta)</option></select>
               </label>
+              <div class="settings-divider"></div>
+              <label class="setting-row" for="imageApiCategorySelect"><span><strong data-i18n="background.category">Kategorie</strong><small data-i18n="background.categoryHelp">Picsum nutzt geprüfte, wasserzeichenfreie Bildgruppen.</small></span><select id="imageApiCategorySelect"><option value="all" data-i18n="background.categoryAll">Alle</option><option value="nature" data-i18n="background.categoryNature">Natur</option><option value="architecture" data-i18n="background.categoryArchitecture">Stadt & Architektur</option><option value="technology" data-i18n="background.categoryTechnology">Technologie</option><option value="people" data-i18n="background.categoryPeople">Menschen</option><option value="minimal" data-i18n="background.categoryMinimal">Ruhig & Minimal</option></select></label>
               <div id="customApiSettings" class="sub-settings" hidden>
                 <label for="customImageApiInput" data-i18n="background.apiUrl">Direkte Bild-URL</label>
                 <input id="customImageApiInput" type="url" data-i18n-placeholder="background.apiPlaceholder">
-                <p class="settings-note" data-i18n="background.apiHelp">Unterstützt {width}, {height} und {seed}. Die URL muss direkt ein Bild liefern.</p>
+                <p class="settings-note" data-i18n="background.apiHelp">Unterstützt {width}, {height}, {seed} und {category}. Die URL muss direkt ein Bild liefern.</p>
               </div>
+              <div class="settings-divider"></div>
+              <label class="setting-row switch-row"><span><strong data-i18n="background.preload">Nächstes Bild vorladen</strong><small data-i18n="background.preloadHelp">Macht den nächsten neuen Tab schneller, benötigt aber eine zusätzliche Bildanfrage.</small></span><input id="preloadOnlineImagesToggle" type="checkbox" role="switch"></label>
               <div class="settings-divider"></div>
               <div class="setting-row action-row"><span><strong data-i18n="background.nextImage">Neues Online-Bild</strong><small data-i18n="background.nextImageHelp">Lädt sofort ein anderes Bild, sofern eine Online-Quelle aktiv ist.</small></span>
                 <button id="refreshBackgroundButton" class="compact-button" type="button"><svg aria-hidden="true"><use href="#icon-refresh"></use></svg><span data-i18n="common.load">Laden</span></button>
               </div>
             </div>
+            <div class="offline-note"><strong data-i18n="background.offlineTitle">Offline verfügbar</strong><span data-i18n="background.offlineHelp">Uhr, Einstellungen, Shortcuts, Pins und lokale Bilder funktionieren offline. Suche und Online-Bilder benötigen Internet.</span></div>
 
             <div class="settings-section-block">
               <h4 data-i18n="background.ownImages">Eigene Bilder</h4>

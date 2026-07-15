@@ -7,10 +7,15 @@ Firefox: https://addons.mozilla.org/de/firefox/addon/brave-like-new-tab/
 ## Version 1.0.3
 
 - Brave-ähnliches Einstellungsfenster mit linker Navigation
+- Flüssigere Settings ohne Vollbild-Blur und ohne unnötiges Neurendern versteckter Listen
+- Benutzerdefinierte Akzentfarbe für Auswahl, Schalter und Fokuszustände
+- Dark Mode als empfohlener Standard, Light Mode ist als Testmodus gekennzeichnet
 - Standardsuchmaschine direkt in den Einstellungen änderbar
 - Brave Search bleibt die Standardsuchmaschine
 - Kostenlose Picsum-Bildquelle ohne API-Key und ohne Wasserzeichen
-- Eigene direkte Bild-API mit `{width}`, `{height}` und `{seed}`
+- Beta-Kategorien für Picsum: Natur, Stadt & Architektur, Technologie, Menschen sowie Ruhig & Minimal
+- Eigene direkte Bild-API mit `{width}`, `{height}`, `{seed}` und `{category}`
+- Sofortiger lokaler Hintergrund und optionales Vorladen des nächsten Online-Bildes
 - Automatischer Offline-Fallback auf vier gebündelte Hintergründe
 - Deutsch, Englisch, Spanisch, Italienisch, Polnisch, Russisch und Französisch
 - Uhr ein- oder ausblendbar sowie 12-, 24- oder automatisches Format
@@ -20,9 +25,11 @@ Firefox: https://addons.mozilla.org/de/firefox/addon/brave-like-new-tab/
 
 Neue Installationen verwenden standardmäßig Picsum Photos. Bei fehlender Verbindung oder einem API-Fehler wird automatisch ein lokales Bild verwendet. Bestehende Installationen bleiben nach dem Update zunächst bei lokalen Bildern, bis die Online-Quelle in den Einstellungen aktiviert wird.
 
+Die Online-Bildfunktionen sind als Beta gekennzeichnet. Beim Öffnen eines neuen Tabs erscheint zuerst ohne Wartezeit ein lokaler Hintergrund. Das Online-Bild wird danach weich eingeblendet. Wenn `Nächstes Bild vorladen` aktiv ist, lädt die Erweiterung im Leerlauf bereits den nächsten Hintergrund in den Browser-Cache.
+
 Verfügbare Quellen:
 
-- `Picsum Photos`: kostenlos, ohne API-Key, wechselnde Bilder aus dem Unsplash-Bestand
+- `Picsum Photos (Beta)`: kostenlos, ohne API-Key, wechselnde Bilder aus dem Unsplash-Bestand
 - `Nur lokal`: keine externe Bildanfrage
 - `Eigene Bild-API`: eine HTTPS-URL, die direkt ein Bild liefert
 - Datei-Upload oder einzelne Bild-URL: wird nach dem Import lokal gespeichert
@@ -30,7 +37,7 @@ Verfügbare Quellen:
 Beispiel für eine eigene API:
 
 ```text
-https://example.com/image/{width}/{height}?seed={seed}
+https://example.com/image/{width}/{height}?seed={seed}&category={category}
 ```
 
 Picsum liefert Bilder ohne eingeblendete Wasserzeichen. Für Bilder externer Dienste gelten die jeweiligen Nutzungs- und Lizenzbedingungen. Die vier gebündelten Bilder wurden mit GPT Image erstellt.
@@ -94,6 +101,7 @@ npx web-ext lint --source-dir .
 ## Bekannte Grenzen
 
 - Die eigene Bild-API muss eine direkte HTTPS-Bildantwort liefern, JSON-APIs werden nicht ausgewertet.
+- Online-Suche und Online-Bilder benötigen eine Internetverbindung. Uhr, Einstellungen, lokale Bilder, Shortcuts und Pins funktionieren offline.
 - Sehr viele oder sehr große importierte Bilder können den lokalen Erweiterungsspeicher belasten.
 - Die Erweiterung ist für Firefox Desktop ausgelegt und wurde nicht für Firefox auf Android freigegeben.
 

@@ -34,6 +34,13 @@ export const BUILTIN_BACKGROUNDS = [
 const MAX_IMAGE_WIDTH = 1920;
 const MAX_IMAGE_HEIGHT = 1200;
 const JPEG_QUALITY = 0.88;
+const PICSUM_CATEGORY_IDS = {
+  nature: [10, 11, 13, 15, 16, 17, 18, 19, 25, 27, 28, 29, 33, 37, 44, 54, 62, 66, 67, 69, 70, 71, 74, 79, 81, 83, 85, 89, 93, 94, 95],
+  architecture: [32, 42, 43, 47, 49, 57, 58, 61, 68, 76, 77, 78, 84, 88, 99],
+  technology: [0, 1, 2, 3, 4, 5, 6, 8, 9, 20, 26, 36, 45, 48, 60, 96],
+  people: [1, 3, 4, 5, 22, 31, 64, 65, 73, 91],
+  minimal: [12, 14, 21, 23, 24, 38, 39, 41, 50, 51, 53, 56, 63, 80, 87, 92]
+};
 
 export function getAllBackgrounds(customImages = []) {
   return [...BUILTIN_BACKGROUNDS, ...customImages.map((image) => ({ ...image, type: "custom" }))];
@@ -75,12 +82,18 @@ export function createOnlineBackground(settings, refreshSeed = "") {
   const seed = settings.backgroundMode === "daily"
     ? new Date().toISOString().slice(0, 10)
     : refreshSeed || createRandomSeed();
+  const width = clampDimension(settings.imageWidth, 1280, 1920, 1920);
+  const height = clampDimension(settings.imageHeight, 800, 1200, 1200);
 
   if (settings.backgroundSource === "picsum") {
+    const categoryIds = PICSUM_CATEGORY_IDS[settings.imageApiCategory];
+    const imageId = categoryIds?.[stableIndex(seed, categoryIds.length)];
     return {
       id: `picsum-${seed}`,
       name: "Picsum Photos",
-      src: `https://picsum.photos/seed/${encodeURIComponent(seed)}/1920/1200.webp`,
+      src: imageId === undefined
+        ? `https://picsum.photos/seed/${encodeURIComponent(seed)}/${width}/${height}.webp`
+        : `https://picsum.photos/id/${imageId}/${width}/${height}.webp`,
       type: "api"
     };
   }
@@ -89,7 +102,7 @@ export function createOnlineBackground(settings, refreshSeed = "") {
     return {
       id: `custom-api-${seed}`,
       name: "Custom API",
-      src: buildCustomImageUrl(settings.customImageApiUrl, seed),
+      src: buildCustomImageUrl(settings.customImageApiUrl, seed, settings.imageApiCategory, width, height),
       type: "api"
     };
   }
@@ -103,7 +116,11 @@ export function normalizeImageApiTemplate(value) {
     throw new Error("Image API URL is missing.");
   }
   const marker = "IMAGE_API_PLACEHOLDER";
-  const marked = trimmed.replaceAll("{width}", marker).replaceAll("{height}", marker).replaceAll("{seed}", marker);
+  const marked = trimmed
+    .replaceAll("{width}", marker)
+    .replaceAll("{height}", marker)
+    .replaceAll("{seed}", marker)
+    .replaceAll("{category}", marker);
   const parsed = new URL(marked);
   if (parsed.protocol !== "https:") {
     throw new Error("Only HTTPS image API URLs are allowed.");
@@ -195,12 +212,18 @@ function createRandomSeed() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function buildCustomImageUrl(template, seed) {
+function buildCustomImageUrl(template, seed, category, width, height) {
   const normalized = normalizeImageApiTemplate(template);
   return normalized
-    .replaceAll("{width}", "1920")
-    .replaceAll("{height}", "1200")
-    .replaceAll("{seed}", encodeURIComponent(seed));
+    .replaceAll("{width}", String(width))
+    .replaceAll("{height}", String(height))
+    .replaceAll("{seed}", encodeURIComponent(seed))
+    .replaceAll("{category}", encodeURIComponent(category || "all"));
+}
+
+function clampDimension(value, minimum, maximum, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, Math.round(number))) : fallback;
 }
 
 function stableIndex(value, length) {
