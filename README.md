@@ -4,7 +4,7 @@ Eine moderne Neuer-Tab-Startseite für Firefox mit Hintergründen, Brave Search,
 
 Firefox: https://addons.mozilla.org/de/firefox/addon/brave-like-new-tab/
 
-## Version 1.0.3
+## Version 1.0.5
 
 - Brave-ähnliches Einstellungsfenster mit linker Navigation
 - Flüssigere Settings ohne Vollbild-Blur und ohne Neurendern versteckter Listen
