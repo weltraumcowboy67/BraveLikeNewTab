@@ -7,14 +7,14 @@ Firefox: https://addons.mozilla.org/de/firefox/addon/brave-like-new-tab/
 ## Version 1.0.3
 
 - Brave-ähnliches Einstellungsfenster mit linker Navigation
-- Flüssigere Settings ohne Vollbild-Blur und ohne unnötiges Neurendern versteckter Listen
+- Flüssigere Settings ohne Vollbild-Blur und ohne Neurendern versteckter Listen
 - Benutzerdefinierte Akzentfarbe für Auswahl, Schalter und Fokuszustände
-- Dark Mode als empfohlener Standard, Light Mode ist als Testmodus gekennzeichnet
+- Dark Mode als Standard, Light Mode (Testmodus)
 - Standardsuchmaschine direkt in den Einstellungen änderbar
 - Brave Search bleibt die Standardsuchmaschine
-- Kostenlose Picsum-Bildquelle ohne API-Key und ohne Wasserzeichen
+- Kostenlose Picsum-Bildquelle ohne API-Key
 - Beta-Kategorien für Picsum: Natur, Stadt & Architektur, Technologie, Menschen sowie Ruhig & Minimal
-- Eigene direkte Bild-API mit `{width}`, `{height}`, `{seed}` und `{category}`
+- Eigene Bild-API mit `{width}`, `{height}`, `{seed}` und `{category}`
 - Sofortiger lokaler Hintergrund und optionales Vorladen des nächsten Online-Bildes
 - Automatischer Offline-Fallback auf vier gebündelte Hintergründe
 - Deutsch, Englisch, Spanisch, Italienisch, Polnisch, Russisch und Französisch
@@ -70,7 +70,7 @@ Es gibt keinen Build-Schritt, keine Paketinstallation und keinen lokalen Port.
 
 ## Entwicklung und Prüfung
 
-Tech Stack: HTML, CSS, Vanilla JavaScript und Firefox WebExtensions Manifest V3.
+Tech Stack: HTML, CSS, JavaScript und "Firefox WebExtensions Manifest V3".
 
 ```bash
 node --check js/app.js
@@ -89,7 +89,6 @@ npx web-ext lint --source-dir .
 - `js/backgrounds.js`: lokale Bilder, Importe und Bild-API-Quellen
 - `js/i18n.js`: Übersetzungen der Startseiten-UI
 - `_locales/`: lokalisierter Erweiterungsname und Beschreibung
-- `RELEASE_NOTES_1.0.3.md`: vorbereitete GitHub Release Notes
 
 ## Datenschutz
 
