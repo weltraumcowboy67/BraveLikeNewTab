@@ -61,6 +61,20 @@ for (const [locale, overrides] of Object.entries(localeOverrides)) {
   translations[locale] = { ...translations.en, ...overrides, ...(featureOverrides[locale] || {}) };
 }
 
+const stableThemeLabels = {
+  de: { "appearance.dark": "Dunkel", "appearance.light": "Hell" },
+  en: { "appearance.dark": "Dark", "appearance.light": "Light" },
+  es: { "appearance.dark": "Oscuro", "appearance.light": "Claro" },
+  it: { "appearance.dark": "Scuro", "appearance.light": "Chiaro" },
+  pl: { "appearance.dark": "Ciemny", "appearance.light": "Jasny" },
+  ru: { "appearance.dark": "Тёмная", "appearance.light": "Светлая" },
+  fr: { "appearance.dark": "Sombre", "appearance.light": "Clair" }
+};
+
+for (const locale of SUPPORTED_LOCALES) {
+  Object.assign(translations[locale], stableThemeLabels[locale], { "background.picsum": "Picsum Photos" });
+}
+
 let activeLocale = "de";
 
 export function resolveLocale(preference = "auto") {

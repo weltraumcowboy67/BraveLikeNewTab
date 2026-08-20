@@ -49,7 +49,6 @@ const elements = {
   themeSelect: document.querySelector("#themeSelect"),
   accentColorInput: document.querySelector("#accentColorInput"),
   resetAccentButton: document.querySelector("#resetAccentButton"),
-  lightModeWarning: document.querySelector("#lightModeWarning"),
   focusModeToggle: document.querySelector("#focusModeToggle"),
   defaultTilesToggle: document.querySelector("#defaultTilesToggle"),
   defaultSearchSelect: document.querySelector("#defaultSearchSelect"),
@@ -161,9 +160,6 @@ function bindEvents() {
     appState.settings.theme = elements.themeSelect.value === "light" ? "light" : "dark";
     applySettingsToPage();
     await persistSettings();
-    if (appState.settings.theme === "light") {
-      showToast(t("appearance.lightWarningTitle"));
-    }
   });
 
   elements.accentColorInput.addEventListener("input", () => {
@@ -216,14 +212,14 @@ function bindEvents() {
     appState.settings.backgroundSource = elements.backgroundSourceSelect.value;
     rotateBackgroundSeeds();
     await persistSettings();
-    await applyBackground({ notifyFallback: true });
+    await applyBackground({ notifyFallback: true, allowWhileSettings: true });
   });
 
   elements.imageApiCategorySelect.addEventListener("change", async () => {
     appState.settings.imageApiCategory = elements.imageApiCategorySelect.value;
     rotateBackgroundSeeds();
     await persistSettings();
-    await applyBackground({ notifyFallback: true });
+    await applyBackground({ notifyFallback: true, allowWhileSettings: true });
   });
 
   elements.preloadOnlineImagesToggle.addEventListener("change", async () => {
@@ -246,7 +242,7 @@ function bindEvents() {
       rotateBackgroundSeeds();
       await persistSettings();
       if (appState.settings.backgroundSource === "custom") {
-        await applyBackground({ notifyFallback: true });
+        await applyBackground({ notifyFallback: true, allowWhileSettings: true });
       }
       showToast(t("toast.saved"));
     } catch {
@@ -265,7 +261,17 @@ function bindEvents() {
       return;
     }
     rotateBackgroundSeeds();
-    await applyBackground({ notifyFallback: true });
+    resumeOnlineLoadsAfterSettings = false;
+    elements.refreshBackgroundButton.disabled = true;
+    elements.refreshBackgroundButton.classList.add("is-loading");
+    elements.refreshBackgroundButton.setAttribute("aria-busy", "true");
+    try {
+      await applyBackground({ notifyFallback: true, allowWhileSettings: true });
+    } finally {
+      elements.refreshBackgroundButton.classList.remove("is-loading");
+      elements.refreshBackgroundButton.removeAttribute("aria-busy");
+      applySettingsToPage();
+    }
   });
 
   elements.showClockToggle.addEventListener("change", async () => {
@@ -454,7 +460,7 @@ async function handleReset() {
   location.reload();
 }
 
-async function applyBackground({ notifyFallback = false } = {}) {
+async function applyBackground({ notifyFallback = false, allowWhileSettings = false } = {}) {
   const requestId = ++backgroundRequestId;
   const fallback = selectBackground(appState.customImages, appState.settings);
   let online = null;
@@ -488,7 +494,7 @@ async function applyBackground({ notifyFallback = false } = {}) {
   if (requestId !== backgroundRequestId) {
     return;
   }
-  if (elements.body.classList.contains("panel-open")) {
+  if (elements.body.classList.contains("panel-open") && !allowWhileSettings) {
     resumeOnlineLoadsAfterSettings = true;
     return;
   }
@@ -514,7 +520,6 @@ function applySettingsToPage() {
   elements.body.classList.toggle("focus-mode", appState.settings.focusMode);
   elements.themeSelect.value = appState.settings.theme;
   elements.accentColorInput.value = appState.settings.accentColor;
-  elements.lightModeWarning.hidden = appState.settings.theme !== "light";
   elements.focusModeToggle.checked = appState.settings.focusMode;
   elements.defaultTilesToggle.checked = appState.settings.showDefaultTiles;
   elements.showClockToggle.checked = appState.settings.showClock;

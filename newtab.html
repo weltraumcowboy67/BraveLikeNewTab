@@ -93,14 +93,13 @@
             <h3 class="settings-page-title" data-i18n="appearance.title">Darstellung</h3>
             <div class="settings-card">
               <label class="setting-row" for="themeSelect"><span data-i18n="appearance.theme">Theme</span>
-                <select id="themeSelect"><option value="dark" data-i18n="appearance.dark">Dunkel (empfohlen)</option><option value="light" data-i18n="appearance.light">Hell (Test)</option></select>
+                <select id="themeSelect"><option value="dark" data-i18n="appearance.dark">Dunkel</option><option value="light" data-i18n="appearance.light">Hell</option></select>
               </label>
               <div class="settings-divider"></div>
               <label class="setting-row switch-row"><span><strong data-i18n="appearance.focus">Fokusmodus</strong><small data-i18n="appearance.focusHelp">Blendet Schnellzugriffe aus.</small></span><input id="focusModeToggle" type="checkbox" role="switch"></label>
               <div class="settings-divider"></div>
               <div class="setting-row accent-row"><span><strong data-i18n="appearance.accent">Akzentfarbe</strong><small data-i18n="appearance.accentHelp">Ändert Auswahl, Schalter und Fokusfarbe der Einstellungen.</small></span><div class="accent-controls"><input id="accentColorInput" type="color" value="#8274ff" data-i18n-aria-label="appearance.accent"><button id="resetAccentButton" class="compact-button" type="button" data-i18n="common.reset">Standard</button></div></div>
             </div>
-            <div id="lightModeWarning" class="settings-warning" hidden><strong data-i18n="appearance.lightWarningTitle">Light Mode ist im Test</strong><span data-i18n="appearance.lightWarning">Einzelne Farben oder Kontraste können noch fehlerhaft wirken.</span></div>
           </section>
 
           <section class="settings-page" data-settings-page="background" hidden>
@@ -111,7 +110,7 @@
               </label>
               <div class="settings-divider"></div>
               <label class="setting-row" for="backgroundSourceSelect"><span><strong data-i18n="background.source">Bildquelle</strong><small data-i18n="background.sourceHelp">Online-Bilder fallen offline automatisch auf lokale Bilder zurück.</small></span>
-                <select id="backgroundSourceSelect"><option value="picsum" data-i18n="background.picsum">Picsum Photos (Beta)</option><option value="local" data-i18n="background.local">Nur lokal</option><option value="custom" data-i18n="background.customApi">Eigene Bild-API (Beta)</option></select>
+                <select id="backgroundSourceSelect"><option value="picsum" data-i18n="background.picsum">Picsum Photos</option><option value="local" data-i18n="background.local">Nur lokal</option><option value="custom" data-i18n="background.customApi">Eigene Bild-API (Beta)</option></select>
               </label>
               <div class="settings-divider"></div>
               <label class="setting-row" for="imageApiCategorySelect"><span><strong data-i18n="background.category">Kategorie</strong><small data-i18n="background.categoryHelp">Picsum nutzt geprüfte, wasserzeichenfreie Bildgruppen.</small></span><select id="imageApiCategorySelect"><option value="all" data-i18n="background.categoryAll">Alle</option><option value="nature" data-i18n="background.categoryNature">Natur</option><option value="architecture" data-i18n="background.categoryArchitecture">Stadt & Architektur</option><option value="technology" data-i18n="background.categoryTechnology">Technologie</option><option value="people" data-i18n="background.categoryPeople">Menschen</option><option value="minimal" data-i18n="background.categoryMinimal">Ruhig & Minimal</option></select></label>
@@ -127,8 +126,6 @@
                 <button id="refreshBackgroundButton" class="compact-button" type="button"><svg aria-hidden="true"><use href="#icon-refresh"></use></svg><span data-i18n="common.load">Laden</span></button>
               </div>
             </div>
-            <div class="offline-note"><strong data-i18n="background.offlineTitle">Offline verfügbar</strong><span data-i18n="background.offlineHelp">Uhr, Einstellungen, Shortcuts, Pins und lokale Bilder funktionieren offline. Suche und Online-Bilder benötigen Internet.</span></div>
-
             <div class="settings-section-block">
               <h4 data-i18n="background.ownImages">Eigene Bilder</h4>
               <div class="settings-actions">
@@ -193,8 +190,8 @@
 
           <section class="settings-page" data-settings-page="data" hidden>
             <h3 class="settings-page-title" data-i18n="data.title">Daten</h3>
-            <div class="settings-card danger-card">
-              <div class="setting-row action-row"><span><strong data-i18n="data.reset">Lokale Daten zurücksetzen</strong><small data-i18n="data.resetHelp">Löscht Einstellungen, Bilder, Shortcuts und Pins dieser Erweiterung.</small></span><button id="resetButton" class="danger-button" type="button" data-i18n="data.resetButton">Zurücksetzen</button></div>
+            <div class="settings-card">
+              <div class="setting-row action-row"><span><strong data-i18n="data.reset">Lokale Daten zurücksetzen</strong><small data-i18n="data.resetHelp">Löscht Einstellungen, Bilder, Shortcuts und Pins dieser Erweiterung.</small></span><button id="resetButton" class="compact-button" type="button" data-i18n="data.resetButton">Zurücksetzen</button></div>
             </div>
             <p class="privacy-note" data-i18n="data.privacy">Deine Einstellungen bleiben lokal. Nur bei einer aktiven Online-Bildquelle wird eine Bildanfrage an den ausgewählten Dienst gesendet.</p>
           </section>
