@@ -4,7 +4,7 @@ Eine moderne Neuer-Tab-Startseite für Firefox mit Hintergründen, Brave Search,
 
 Firefox: https://addons.mozilla.org/de/firefox/addon/brave-like-new-tab/
 
-## Version 1.0.5
+## Version 1.0.6
 
 - Brave-ähnliches Einstellungsfenster
 - Benutzerdefinierte Akzentfarbe für Auswahl und Schalter
@@ -18,6 +18,7 @@ Firefox: https://addons.mozilla.org/de/firefox/addon/brave-like-new-tab/
 - Automatischer Offline-Fallback auf vier gebündelte Hintergründe
 - Deutsch, Englisch, Spanisch, Italienisch, Polnisch, Russisch und Französisch sind Unterstützt
 - Uhr ein- oder ausblendbar sowie 12-, 24- oder automatisches Format
+- Handy Support (Testing)
 
 ## Hintergrundbilder
 
