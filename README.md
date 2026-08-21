@@ -91,3 +91,15 @@ Die veröffentlichte Version über die oben verlinkte Firefox-Add-ons-Seite inst
 ## Tipps
 
 Für eigene Shortcut-Icons eignen sich transparente PNG- oder SVG-Dateien besser. JPEG funktioniert ebenfalls, besitzt aber keine Transparenz.
+
+## Credits / Drittanbieter
+
+Online background images are provided through Lorem Picsum (picsum.photos).
+Lorem Picsum uses images from Unsplash.
+
+YouTube and the YouTube logo are trademarks of Google LLC.
+BraveLikeNewTab is not affiliated with or endorsed by YouTube or Google.
+
+Brave and the Brave logo are trademarks of Brave Software, Inc.
+BraveLikeNewTab is an independent project and is not affiliated with,
+endorsed by, or sponsored by Brave Software, Inc.
