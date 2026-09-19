@@ -65,17 +65,6 @@ Die veröffentlichte Version über die oben verlinkte Firefox-Add-ons-Seite inst
 4. Die Datei `manifest.json` aus diesem Ordner auswählen.
 5. Einen neuen Tab öffnen.
 
-
-## Wichtige Dateien
-
-- `newtab.html`: Startseite und Einstellungsstruktur
-- `css/styles.css`: Layout, Themes und responsive Darstellung
-- `js/app.js`: Interaktionen, Suche, Settings und Rendering
-- `js/storage.js`: lokale Speicherung, Defaults und Migrationen
-- `js/backgrounds.js`: lokale Bilder, Importe und Bild-API-Quellen
-- `js/i18n.js`: Übersetzungen der Startseiten-UI
-- `_locales/`: lokalisierter Erweiterungsname und Beschreibung
-
 ## Datenschutz
 
 - Einstellungen und importierte Inhalte bleiben lokal
