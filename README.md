@@ -93,3 +93,5 @@ BraveLikeNewTab is not affiliated with or endorsed by YouTube or Google.
 Brave and the Brave logo are trademarks of Brave Software, Inc.
 BraveLikeNewTab is an independent project and is not affiliated with,
 endorsed by, or sponsored by Brave Software, Inc.
+
+Copyright © 2026 Benni (weltraumcowboy67)
